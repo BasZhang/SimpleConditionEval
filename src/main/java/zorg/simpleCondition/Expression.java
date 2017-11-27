@@ -9,8 +9,8 @@ public class Expression {
     @SuppressWarnings("serial")
     class TokenList extends ArrayList<Token> {
         @Override
-        public void removeRange(int paramInt1, int paramInt2) {
-            super.removeRange(paramInt1, paramInt2);
+        public void removeRange(int fromIndex, int toIndex) {
+            super.removeRange(fromIndex, toIndex);
         }
     }
 
@@ -73,9 +73,8 @@ public class Expression {
     }
 
     private boolean evalByPrecedence(TokenList subTokens) {
-        // 脱括号
         removeSurroundingParenPair(subTokens);
-        // 根据优先级从左到右计算
+
         for (int precedence = 0; precedence <= 6; precedence++) {
             for (int pos = 0; pos < subTokens.size(); pos++) {
                 Token token = subTokens.get(pos);
@@ -89,22 +88,22 @@ public class Expression {
             }
         }
         if (subTokens.size() != 1 || !(subTokens.get(0) instanceof Identifier)) {
-            throw new ExpressionException("条件表达式错误");
+            throw new ExpressionException("expression format error");
         } else {
             return ((Identifier) subTokens.get(0)).ref.get();
         }
     }
 
     private void removeSurroundingParenPair(TokenList subTokens) {
-        int isize = subTokens.size();
-        if (!subTokens.isEmpty() && (subTokens.get(0) == Tokens.OPEN_PAREN) && (subTokens.get(isize - 1) == Tokens.CLOSE_PAREN)) {
-            for (int i = 0, r = 0; i < isize; i++) {
+        int size = subTokens.size();
+        if (!subTokens.isEmpty() && (subTokens.get(0) == Tokens.OPEN_PAREN) && (subTokens.get(size - 1) == Tokens.CLOSE_PAREN)) {
+            for (int i = 0, r = 0; i < size; i++) {
                 Token tk3 = subTokens.get(i);
                 if (tk3 == Tokens.OPEN_PAREN) {
                     r++;
                 } else if (tk3 == Tokens.CLOSE_PAREN) {
                     if (--r == 0) {
-                        if (i == isize - 1) {
+                        if (i == size - 1) {
                             subTokens.remove(i);
                             subTokens.remove(0);
                         }
@@ -122,12 +121,12 @@ public class Expression {
 
             TokenList rightTks = removeRight(subTokens, pos);
             if (rightTks.size() != 1 || !(rightTks.get(0) instanceof Identifier)) {
-                throw new ExpressionException("表达式错误");
+                throw new ExpressionException("expression format error");
             }
             Identifier r = ((Identifier) rightTks.get(0));
             ICondition ref = context.get(r.identifier);
             if (ref == null) {
-                throw new ExpressionException("不能绑定引用" + r.identifier);
+                throw new ExpressionException("can't bind @" + r.identifier);
             }
             r.ref = ref;
             subTokens.set(pos, r);
@@ -136,7 +135,7 @@ public class Expression {
 
             TokenList rightTks = removeRight(subTokens, pos);
             if (rightTks.isEmpty()) {
-                throw new ExpressionException("表达式错误");
+                throw new ExpressionException("expression format error");
             }
 
             boolean right = evalByPrecedence(rightTks);
@@ -149,7 +148,7 @@ public class Expression {
             pos += posChange;
             TokenList rightTks = removeRight(subTokens, pos);
             if (leftTks.isEmpty() || rightTks.isEmpty()) {
-                throw new ExpressionException("表达式错误");
+                throw new ExpressionException("expression format error");
             }
             if (evalByPrecedence(leftTks)) {
                 boolean right = evalByPrecedence(rightTks);
@@ -165,7 +164,7 @@ public class Expression {
             pos += posChange;
             TokenList rightTks = removeRight(subTokens, pos);
             if (leftTks.isEmpty() || rightTks.isEmpty()) {
-                throw new ExpressionException("表达式错误");
+                throw new ExpressionException("expression format error");
             }
             if (!evalByPrecedence(leftTks)) {
                 boolean right = evalByPrecedence(rightTks);
@@ -181,19 +180,19 @@ public class Expression {
             pos += posChange;
             TokenList optionLeftTks = removeRight(subTokens, pos);
             if (testTks.isEmpty() || optionLeftTks.isEmpty()) {
-                throw new ExpressionException("表达式错误");
+                throw new ExpressionException("expression format error");
             }
             int colonPos = pos + 1;
             if (colonPos >= subTokens.size()) {
-                throw new ExpressionException("表达式错误");
+                throw new ExpressionException("expression format error");
             }
             Token shouldBeColon = subTokens.get(colonPos);
             if (shouldBeColon != Tokens.OPTION) {
-                throw new ExpressionException("表达式错误");
+                throw new ExpressionException("expression format error");
             }
             TokenList optionRightTks = removeRight(subTokens, colonPos);
             if (optionRightTks.isEmpty()) {
-                throw new ExpressionException("表达式错误");
+                throw new ExpressionException("expression format error");
             }
             subTokens.remove(colonPos);
             if (evalByPrecedence(testTks)) {
@@ -212,7 +211,7 @@ public class Expression {
         TokenList ans = new TokenList();
         int leftEndPos = pos - 1;
         if (leftEndPos < 0) {
-            throw new ExpressionException("运算符位置错误");
+            throw new ExpressionException("operator position error");
         }
         Token tkLeft = subTokens.get(leftEndPos);
         if (tkLeft instanceof Identifier) {
@@ -237,10 +236,10 @@ public class Expression {
                 ans.addAll(subTokens.subList(foundPos, leftEndPos + 1));
                 subTokens.removeRange(foundPos, leftEndPos + 1);
             } else {
-                throw new ExpressionException("括号不匹配");
+                throw new ExpressionException("parentheses not match");
             }
         } else {
-            throw new ExpressionException("表达式错误");
+            throw new ExpressionException("expression format error");
         }
         return ans;
     }
@@ -250,7 +249,7 @@ public class Expression {
         int rightStartPos = pos + 1;
         int size = subTokens.size();
         if (rightStartPos >= size) {
-            throw new ExpressionException("运算符位置错误");
+            throw new ExpressionException("operator posisition error");
         }
         Token tkRight = subTokens.get(rightStartPos);
         if (tkRight instanceof Identifier) {
@@ -275,10 +274,10 @@ public class Expression {
                 ans.addAll(subTokens.subList(rightStartPos, foundPos + 1));
                 subTokens.removeRange(rightStartPos, foundPos + 1);
             } else {
-                throw new ExpressionException("括号不匹配");
+                throw new ExpressionException("parentheses not match");
             }
         } else {
-            throw new ExpressionException("表达式错误");
+            throw new ExpressionException("expression format error");
         }
         return ans;
     }

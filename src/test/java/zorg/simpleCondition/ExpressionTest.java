@@ -1,6 +1,7 @@
 package zorg.simpleCondition;
 
-import static org.junit.jupiter.api.Assertions
+import org.apache.commons.lang3.reflect.FieldUtils;
+import org.junit.jupiter.api.Test;
 
 import java.lang.reflect.Field;
 import java.util.HashMap;
@@ -8,23 +9,11 @@ import java.util.List;
 import java.util.Map;
 import java.util.concurrent.atomic.AtomicBoolean;
 
-import org.apache.commons.lang3.reflect.FieldUtils;
-import org.junit.Test;
+import static org.junit.jupiter.api.Assertions.*;
 
-public class ExpressionTest {
+class ExpressionTest {
 
-    @SuppressWarnings("serial")
-    private Map<String, ICondition> context = new HashMap<String, ICondition>() {
-        {
-            put("1", ICondition.TRUE);
-            put("b", ICondition.FALSE);
-            put("b___1212", ICondition.FALSE);
-            put("o1", ICondition.TRUE);
-            put("o2", ICondition.FALSE);
-            put("o3", ICondition.TRUE);
-            put("o4", ICondition.FALSE);
-        }
-    };
+    private Map<String, ICondition> context = Map.of("1", ICondition.TRUE, "b", ICondition.FALSE, "b___1212", ICondition.FALSE, "o1", ICondition.TRUE, "o2", ICondition.FALSE, "o3", ICondition.TRUE, "o4", ICondition.FALSE);
 
     private List<Token> accessTokens(Expression e1) throws IllegalAccessException {
         Field f = FieldUtils.getField(Expression.class, "tokens", true);
@@ -34,7 +23,7 @@ public class ExpressionTest {
     }
 
     @Test
-    public void testRef() throws Exception {
+    void testRef() throws Exception {
         Expression e1 = new Expression("@1", context);
         List<Token> tokens = accessTokens(e1);
         assertTrue(tokens.size() == 2);
@@ -45,7 +34,7 @@ public class ExpressionTest {
     }
 
     @Test
-    public void testAnd() throws Exception {
+    void testAnd() throws Exception {
         Expression e1 = new Expression("@1 & @b", context);
         List<Token> tokens = accessTokens(e1);
         assertTrue(tokens.size() == 5);
@@ -59,7 +48,7 @@ public class ExpressionTest {
     }
 
     @Test
-    public void testParen() throws Exception {
+    void testParen() throws Exception {
         Expression e1 = new Expression("(@1) & @b & @b___1212", context);
         List<Token> tokens = accessTokens(e1);
         assertTrue(tokens.size() == 10);
@@ -78,7 +67,7 @@ public class ExpressionTest {
     }
 
     @Test
-    public void testSurroundingParen() throws Exception {
+    void testSurroundingParen() throws Exception {
         Expression e1 = new Expression("(@1) & (@b & @b___1212)", context);
         List<Token> tokens = accessTokens(e1);
         assertTrue(tokens.size() == 12);
@@ -99,7 +88,7 @@ public class ExpressionTest {
     }
 
     @Test
-    public void testOr1() throws Exception {
+    void testOr1() throws Exception {
         Expression e1 = new Expression("(@o1) & (@o2 | @o3)", context);
         List<Token> tokens = accessTokens(e1);
         assertTrue(tokens.size() == 12);
@@ -120,7 +109,7 @@ public class ExpressionTest {
     }
 
     @Test
-    public void testOr2() throws Exception {
+    void testOr2() throws Exception {
         Expression e1 = new Expression("(@o2 | @o3 & @o4)", context);
         assertFalse(e1.eval());
         Expression e2 = new Expression("((@o2 | @o3) & @o1)", context);
@@ -128,7 +117,7 @@ public class ExpressionTest {
     }
 
     @Test
-    public void testNot() throws Exception {
+    void testNot() throws Exception {
         Expression e1 = new Expression("!(@o2 | @o3 & @o4)", context);
         assertTrue(e1.eval());
         Expression e2 = new Expression("((!@o2 | @o3) & @o1)", context);
@@ -136,53 +125,42 @@ public class ExpressionTest {
     }
 
     @Test
-    public void testConditional1() throws Exception {
+    void testConditional1() throws Exception {
         Expression e1 = new Expression("@1 ? !(@o2 | @o3 & @o4) : ((!@o2 | @o3) & @o1)", context);
         assertTrue(e1.eval());
     }
 
     @Test
-    public void testConditional2() throws Exception {
+    void testConditional2() throws Exception {
         Expression e1 = new Expression("@1 ? (!@o2 ?@o3 | @o4 : @b) : ((!@o2 | @o3) & @o1)", context);
         assertTrue(e1.eval());
     }
 
     @Test
-    public void testConditional3() throws Exception {
+    void testConditional3() throws Exception {
         Expression e1 = new Expression("@1 ? !(!@o2 ?@o3 & @o4 : @b) : ((!@o2 | @o3) & @o1)", context);
         assertTrue(e1.eval());
     }
 
     @Test
-    public void testLazy1() throws Exception {
-        final AtomicBoolean f11Got = new AtomicBoolean(false);
-        this.context.put("f11", new ICondition() {
-
-            @Override
-            public boolean get() {
-                f11Got.set(true);
-                return false;
-            }
+    void testLazy1() throws Exception {
+        Map<String, ICondition> fContext = new HashMap<>();
+        AtomicBoolean f11Got = new AtomicBoolean(false);
+        fContext.put("f11", () -> {
+            f11Got.set(true);
+            return false;
         });
-        final AtomicBoolean f12Got = new AtomicBoolean(false);
-        this.context.put("f12", new ICondition() {
-
-            @Override
-            public boolean get() {
-                f12Got.set(true);
-                return false;
-            }
+        AtomicBoolean f12Got = new AtomicBoolean(false);
+        fContext.put("f12", () -> {
+            f12Got.set(true);
+            return false;
         });
-        final AtomicBoolean f13Got = new AtomicBoolean(false);
-        this.context.put("f13", new ICondition() {
-
-            @Override
-            public boolean get() {
-                f13Got.set(true);
-                return true;
-            }
+        AtomicBoolean f13Got = new AtomicBoolean(false);
+        fContext.put("f13", () -> {
+            f13Got.set(true);
+            return true;
         });
-        Expression e1 = new Expression("@f11 ? @f12 : @f13", context);
+        Expression e1 = new Expression("@f11 ? @f12 : @f13", fContext);
         assertTrue(e1.eval());
         assertTrue(f11Got.get());
         assertFalse(f12Got.get());
@@ -190,35 +168,24 @@ public class ExpressionTest {
     }
 
     @Test
-    public void testLazy2() throws Exception {
-        final AtomicBoolean f21Got = new AtomicBoolean(false);
-        this.context.put("f21", new ICondition() {
-
-            @Override
-            public boolean get() {
-                f21Got.set(true);
-                return true;
-            }
+    void testLazy2() throws Exception {
+        Map<String, ICondition> fContext = new HashMap<>();
+        AtomicBoolean f21Got = new AtomicBoolean(false);
+        fContext.put("f21", () -> {
+            f21Got.set(true);
+            return true;
         });
-        final AtomicBoolean f22Got = new AtomicBoolean(false);
-        this.context.put("f22", new ICondition() {
-
-            @Override
-            public boolean get() {
-                f22Got.set(true);
-                return true;
-            }
+        AtomicBoolean f22Got = new AtomicBoolean(false);
+        fContext.put("f22", () -> {
+            f22Got.set(true);
+            return true;
         });
-        final AtomicBoolean f23Got = new AtomicBoolean(false);
-        this.context.put("f23", new ICondition() {
-
-            @Override
-            public boolean get() {
-                f23Got.set(true);
-                return true;
-            }
+        AtomicBoolean f23Got = new AtomicBoolean(false);
+        fContext.put("f23", () -> {
+            f23Got.set(true);
+            return true;
         });
-        Expression e1 = new Expression("@f21 & @f22 | @f23", context);
+        Expression e1 = new Expression("@f21 & @f22 | @f23", fContext);
         assertTrue(e1.eval());
         assertTrue(f21Got.get());
         assertTrue(f22Got.get());
@@ -226,50 +193,39 @@ public class ExpressionTest {
     }
 
     @Test
-    public void testLazy3() throws Exception {
-        final AtomicBoolean f31Got = new AtomicBoolean(false);
-        this.context.put("f31", new ICondition() {
-
-            @Override
-            public boolean get() {
-                f31Got.set(true);
-                return false;
-            }
+    void testLazy3() throws Exception {
+        Map<String, ICondition> fContext = new HashMap<>();
+        AtomicBoolean f31Got = new AtomicBoolean(false);
+        fContext.put("f31", () -> {
+            f31Got.set(true);
+            return false;
         });
-        final AtomicBoolean f32Got = new AtomicBoolean(false);
-        this.context.put("f32", new ICondition() {
-
-            @Override
-            public boolean get() {
-                f32Got.set(true);
-                return false;
-            }
+        AtomicBoolean f32Got = new AtomicBoolean(false);
+        fContext.put("f32", () -> {
+            f32Got.set(true);
+            return false;
         });
-        final AtomicBoolean f33Got = new AtomicBoolean(false);
-        this.context.put("f33", new ICondition() {
-
-            @Override
-            public boolean get() {
-                f33Got.set(true);
-                return true;
-            }
+        AtomicBoolean f33Got = new AtomicBoolean(false);
+        fContext.put("f33", () -> {
+            f33Got.set(true);
+            return true;
         });
-        Expression e1 = new Expression("@f31 | @f33 | @f32", context);
+        Expression e1 = new Expression("@f31 | @f33 | @f32", fContext);
         assertTrue(e1.eval());
         assertTrue(f31Got.get());
         assertFalse(f32Got.get());
         assertTrue(f33Got.get());
     }
 
-    @Test(expected = ExpressionException.class)
-    public void testException1() {
+    @Test
+    void testException1() {
         Expression e1 = new Expression("@f31 | @f33 | @f32?", context);
-        e1.eval();
+        assertThrows(ExpressionException.class, e1::eval);
     }
 
-    @Test(expected = ExpressionException.class)
-    public void testException2() {
+    @Test
+    void testException2() {
         Expression e1 = new Expression("@1 | @b?", context);
-        e1.eval();
+        assertThrows(ExpressionException.class, e1::eval);
     }
 }

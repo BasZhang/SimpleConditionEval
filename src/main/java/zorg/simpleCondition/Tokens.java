@@ -67,7 +67,7 @@ class Identifier extends Token {
 class Paren extends Token {
     final String op;
 
-    public Paren(String op) {
+    Paren(String op) {
         super();
         this.op = op;
     }
