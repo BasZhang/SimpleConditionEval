@@ -1,32 +1,35 @@
 package zorg.simpleCondition;
 
 import java.util.ArrayList;
-import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 
 public class Expression {
 
-    private List<Token> tokens;
+    @SuppressWarnings("serial")
+    class TokenList extends ArrayList<Token> {
+        @Override
+        public void removeRange(int paramInt1, int paramInt2) {
+            super.removeRange(paramInt1, paramInt2);
+        }
+    }
+
+    private final TokenList tokens;
+    private final Map<String, ICondition> context;
 
     public Expression(String expression, Map<String, ICondition> context) {
         Objects.requireNonNull(expression);
         Objects.requireNonNull(context);
         this.tokens = tokenize(expression);
-        bind(context);
+        this.context = context;
     }
 
-    private void bind(Map<String, ICondition> context) {
-        for (Token token : tokens) {
-            if (token instanceof Identifier) {
-                Identifier identifier = (Identifier) token;
-                identifier.ref = context.get(identifier.identifier);
-            }
-        }
+    public boolean eval() {
+        return evalByPrecedence(tokens);
     }
 
-    private List<Token> tokenize(String expression) {
-        List<Token> ans = new ArrayList<>();
+    private TokenList tokenize(String expression) {
+        TokenList ans = new TokenList();
 
         for (int i = 0; i < expression.length(); i++) {
             char c = expression.charAt(i);
@@ -50,17 +53,18 @@ public class Expression {
                 ans.add(Tokens.REF);
             } else if (Character.isAlphabetic(c) || Character.isDigit(c) || c == '_') {
                 StringBuilder stringBuilder = new StringBuilder();
-                int j = i;
+                stringBuilder.append(c);
+                int j = i + 1;
                 for (; j < expression.length(); j++) {
                     char c1 = expression.charAt(j);
                     if (Character.isAlphabetic(c1) || Character.isDigit(c1) || c1 == '_') {
                         stringBuilder.append(c1);
+                        i++;
                     } else {
                         break;
                     }
                 }
                 ans.add(Tokens.IDENTIFIER(stringBuilder.toString()));
-                i = j;
             } else {
                 throw new IllegalArgumentException("Unsupported character at " + i);
             }
@@ -68,12 +72,215 @@ public class Expression {
         return ans;
     }
 
-    public boolean eval() {
-        for (Token token : tokens) {
-
+    private boolean evalByPrecedence(TokenList subTokens) {
+        // 脱括号
+        removeSurroundingParenPair(subTokens);
+        // 根据优先级从左到右计算
+        for (int precedence = 0; precedence <= 6; precedence++) {
+            for (int pos = 0; pos < subTokens.size(); pos++) {
+                Token token = subTokens.get(pos);
+                if (token instanceof Operator) {
+                    Operator op = (Operator) token;
+                    if (op.precedence == precedence) {
+                        int lengthChange = operate(subTokens, pos);
+                        pos += lengthChange;
+                    }
+                }
+            }
         }
-        return false;
+        if (subTokens.size() != 1 || !(subTokens.get(0) instanceof Identifier)) {
+            throw new ExpressionException("条件表达式错误");
+        } else {
+            return ((Identifier) subTokens.get(0)).ref.get();
+        }
     }
 
+    private void removeSurroundingParenPair(TokenList subTokens) {
+        int isize = subTokens.size();
+        if (!subTokens.isEmpty() && (subTokens.get(0) == Tokens.OPEN_PAREN) && (subTokens.get(isize - 1) == Tokens.CLOSE_PAREN)) {
+            for (int i = 0, r = 0; i < isize; i++) {
+                Token tk3 = subTokens.get(i);
+                if (tk3 == Tokens.OPEN_PAREN) {
+                    r++;
+                } else if (tk3 == Tokens.CLOSE_PAREN) {
+                    if (--r == 0) {
+                        if (i == isize - 1) {
+                            subTokens.remove(i);
+                            subTokens.remove(0);
+                        }
+                        break;
+                    }
+                }
+            }
+        }
+    }
+
+    private int operate(TokenList subTokens, int pos) {
+        int posChange = 0;
+        Token tk = subTokens.get(pos);
+        if (tk == Tokens.REF) {
+
+            TokenList rightTks = removeRight(subTokens, pos);
+            if (rightTks.size() != 1 || !(rightTks.get(0) instanceof Identifier)) {
+                throw new ExpressionException("表达式错误");
+            }
+            Identifier r = ((Identifier) rightTks.get(0));
+            ICondition ref = context.get(r.identifier);
+            if (ref == null) {
+                throw new ExpressionException("不能绑定引用" + r.identifier);
+            }
+            r.ref = ref;
+            subTokens.set(pos, r);
+
+        } else if (tk == Tokens.NOT) {
+
+            TokenList rightTks = removeRight(subTokens, pos);
+            if (rightTks.isEmpty()) {
+                throw new ExpressionException("表达式错误");
+            }
+
+            boolean right = evalByPrecedence(rightTks);
+            subTokens.set(pos, Tokens.VALUE(!right));
+
+        } else if (tk == Tokens.AND) {
+
+            TokenList leftTks = removeLeft(subTokens, pos);
+            posChange = -leftTks.size();
+            pos += posChange;
+            TokenList rightTks = removeRight(subTokens, pos);
+            if (leftTks.isEmpty() || rightTks.isEmpty()) {
+                throw new ExpressionException("表达式错误");
+            }
+            if (evalByPrecedence(leftTks)) {
+                boolean right = evalByPrecedence(rightTks);
+                subTokens.set(pos, Tokens.VALUE(right));
+            } else {
+                subTokens.set(pos, Tokens.VALUE(false));
+            }
+
+        } else if (tk == Tokens.OR) {
+
+            TokenList leftTks = removeLeft(subTokens, pos);
+            posChange = -leftTks.size();
+            pos += posChange;
+            TokenList rightTks = removeRight(subTokens, pos);
+            if (leftTks.isEmpty() || rightTks.isEmpty()) {
+                throw new ExpressionException("表达式错误");
+            }
+            if (!evalByPrecedence(leftTks)) {
+                boolean right = evalByPrecedence(rightTks);
+                subTokens.set(pos, Tokens.VALUE(right));
+            } else {
+                subTokens.set(pos, Tokens.VALUE(true));
+            }
+
+        } else if (tk == Tokens.CONDITIONAL) {
+
+            TokenList testTks = removeLeft(subTokens, pos);
+            posChange = -testTks.size();
+            pos += posChange;
+            TokenList optionLeftTks = removeRight(subTokens, pos);
+            if (testTks.isEmpty() || optionLeftTks.isEmpty()) {
+                throw new ExpressionException("表达式错误");
+            }
+            int colonPos = pos + 1;
+            if (colonPos >= subTokens.size()) {
+                throw new ExpressionException("表达式错误");
+            }
+            Token shouldBeColon = subTokens.get(colonPos);
+            if (shouldBeColon != Tokens.OPTION) {
+                throw new ExpressionException("表达式错误");
+            }
+            TokenList optionRightTks = removeRight(subTokens, colonPos);
+            if (optionRightTks.isEmpty()) {
+                throw new ExpressionException("表达式错误");
+            }
+            subTokens.remove(colonPos);
+            if (evalByPrecedence(testTks)) {
+                boolean optionLeft = evalByPrecedence(optionLeftTks);
+                subTokens.set(pos, Tokens.VALUE(optionLeft));
+            } else {
+                boolean optionRight = evalByPrecedence(optionRightTks);
+                subTokens.set(pos, Tokens.VALUE(optionRight));
+            }
+
+        }
+        return posChange;
+    }
+
+    private TokenList removeLeft(TokenList subTokens, int pos) {
+        TokenList ans = new TokenList();
+        int leftEndPos = pos - 1;
+        if (leftEndPos < 0) {
+            throw new ExpressionException("运算符位置错误");
+        }
+        Token tkLeft = subTokens.get(leftEndPos);
+        if (tkLeft instanceof Identifier) {
+            subTokens.remove(leftEndPos);
+            ans.add(tkLeft);
+        } else if (tkLeft == Tokens.CLOSE_PAREN) {
+            int r = 0;
+            int foundPos = -1;
+            for (int i = leftEndPos; i >= 0; i--) {
+                if (subTokens.get(i) == Tokens.CLOSE_PAREN) {
+                    r++;
+                }
+                if (subTokens.get(i) == Tokens.OPEN_PAREN) {
+                    r--;
+                    if (r == 0) {
+                        foundPos = i;
+                        break;
+                    }
+                }
+            }
+            if (foundPos != -1) {
+                ans.addAll(subTokens.subList(foundPos, leftEndPos + 1));
+                subTokens.removeRange(foundPos, leftEndPos + 1);
+            } else {
+                throw new ExpressionException("括号不匹配");
+            }
+        } else {
+            throw new ExpressionException("表达式错误");
+        }
+        return ans;
+    }
+
+    private TokenList removeRight(TokenList subTokens, int pos) {
+        TokenList ans = new TokenList();
+        int rightStartPos = pos + 1;
+        int size = subTokens.size();
+        if (rightStartPos >= size) {
+            throw new ExpressionException("运算符位置错误");
+        }
+        Token tkRight = subTokens.get(rightStartPos);
+        if (tkRight instanceof Identifier) {
+            subTokens.remove(rightStartPos);
+            ans.add(tkRight);
+        } else if (tkRight == Tokens.OPEN_PAREN) {
+            int r = 0;
+            int foundPos = -1;
+            for (int i = rightStartPos; i < size; i++) {
+                if (subTokens.get(i) == Tokens.OPEN_PAREN) {
+                    r++;
+                }
+                if (subTokens.get(i) == Tokens.CLOSE_PAREN) {
+                    r--;
+                    if (r == 0) {
+                        foundPos = i;
+                        break;
+                    }
+                }
+            }
+            if (foundPos != -1) {
+                ans.addAll(subTokens.subList(rightStartPos, foundPos + 1));
+                subTokens.removeRange(rightStartPos, foundPos + 1);
+            } else {
+                throw new ExpressionException("括号不匹配");
+            }
+        } else {
+            throw new ExpressionException("表达式错误");
+        }
+        return ans;
+    }
 
 }
